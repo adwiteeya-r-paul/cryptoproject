@@ -43,7 +43,7 @@ class SiFT_MTP:
 		parsed_msg_hdr, i = {}, 0
 		parsed_msg_hdr['ver'], i = msg_hdr[i:i+self.size_msg_hdr_ver], i+self.size_msg_hdr_ver 
 		parsed_msg_hdr['typ'], i = msg_hdr[i:i+self.size_msg_hdr_typ], i+self.size_msg_hdr_typ
-		parsed_msg_hdr['len'] = msg_hdr[i:i+self.size_msg_hdr_len]
+		parsed_msg_hdr['len'], i = msg_hdr[i:i+self.size_msg_hdr_len]
 		return parsed_msg_hdr
 
 

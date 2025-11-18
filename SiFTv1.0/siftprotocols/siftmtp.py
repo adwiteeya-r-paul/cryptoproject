@@ -17,7 +17,7 @@ class SiFT_MTP_Error(Exception):
         self.err_msg = err_msg
 
 class SiFT_MTP:
-	def __init__(self):
+	def __init__(self, peer_socket):
 
 		self.DEBUG = True
 		# --------- CONSTANTS ------------
@@ -49,7 +49,7 @@ class SiFT_MTP:
 						  self.type_upload_req_0, self.type_upload_req_1, self.type_upload_res,
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
-		# self.peer_socket = peer_socket
+		self.peer_socket = peer_socket
 
 
 	def login_header(self):
