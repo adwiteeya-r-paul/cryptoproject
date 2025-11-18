@@ -175,10 +175,10 @@ class SiFT_MTP:
 		msg_bytes_length = (self.size_msg_hdr + len(msg_payload)).to_bytes(2, 'big')
 		msg_bytes_sqn = self.snd_sqn.to_bytes(2, 'big')
 		msg_hdr_rnd = get_random_bytes(6)
-		self.transfer_key = 'server.py is the server program.'
+		self.transfer_key = b'server.py is the server program.'
 		
 		
-		msg_hdr = self.msg_hdr_ver + self.type_login_res + msg_bytes_length + msg_bytes_sqn + msg_hdr_rnd + self.msg_hdr_rsv
+		msg_hdr = self.msg_hdr_ver + msg_type + msg_bytes_length + msg_bytes_sqn + msg_hdr_rnd + self.msg_hdr_rsv
 		
 		
 		nonce = msg_bytes_sqn + msg_hdr_rnd
