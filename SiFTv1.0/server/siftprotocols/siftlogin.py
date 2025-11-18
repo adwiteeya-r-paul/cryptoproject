@@ -38,7 +38,7 @@ class SiFT_LOGIN:
 
     # parses a login request into a dictionary
     def parse_login_req(self, login_req):
-
+        
         login_req_fields = login_req.decode(self.coding).split(self.delimiter)
         login_req_struct = {}
         login_req_struct['username'] = login_req_fields[0]

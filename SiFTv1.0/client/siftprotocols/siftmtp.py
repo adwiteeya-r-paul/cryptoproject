@@ -45,22 +45,22 @@ class SiFT_MTP:
         self.type_dnload_res_0 = b'\x03\x10'
         self.type_dnload_res_1 = b'\x03\x11'
         self.msg_types = (self.type_login_req, self.type_login_res,
-                          self.type_command_req, self.type_command_res,
-                          self.type_upload_req_0, self.type_upload_req_1, self.type_upload_res,
-                          self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
+                        self.type_command_req, self.type_command_res,
+                        self.type_upload_req_0, self.type_upload_req_1, self.type_upload_res,
+                        self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
         # --------- STATE ------------
         self.peer_socket = peer_socket
         self.snd_sqn = 0
         self.rcv_sqn = 0
         self.transfer_key = None
 
-    def login_header(self):
+    # def login_header(self):
 
-        msg_bytes_length = b'\x00\x0F'
-        # msg_hdr_sqn = b'\x00\x01'
-        # msg_hdr_rnd = get_random_bytes(6)
-        msg_hdr = self.msg_hdr_ver + self.type_login_res + msg_bytes_length + self.msg_hdr_sqn + self.msg_hdr_rnd + self.msg_hdr_rsv
-        return msg_hdr
+    #     msg_bytes_length = b'\x00\x0F'
+    #     # msg_hdr_sqn = b'\x00\x01'
+    #     # msg_hdr_rnd = get_random_bytes(6)
+    #     msg_hdr = self.msg_hdr_ver + self.type_login_res + msg_bytes_length + self.msg_hdr_sqn + self.msg_hdr_rnd + self.msg_hdr_rsv
+    #     return msg_hdr
 
     # parses a message header and returns a dictionary containing the header fields
     def parse_msg_header(self, msg_hdr):
@@ -112,28 +112,21 @@ class SiFT_MTP:
 
         self.transfer_key = b'server.py is the server program.'
         msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-        print(msg_len)
-		# header = parsed_msg_hdr[:msg_len-self.size_msg_hdr_len]   
-		# ciphertext = ciphertext_all[20:-16]
-		# authtag = ciphertext_all[-16:]
         nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
-        print(msg_hdr.hex())
         
+        # TODO
+        # check sequence num in header
         # msg_bytes_sqn = self.rcv_sqn.to_bytes(2, 'big')
         
         try:
             msg_body = self.receive_bytes(msg_len - self.size_msg_hdr)
-            print(msg_body.hex())
             payload = msg_body[0:-self.size_mac]
-            print(payload.hex())
             mac = msg_body[-self.size_mac:]
-            print(mac.hex())
             
             cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
             cipher.update(msg_hdr)
             plaintext = cipher.decrypt_and_verify(payload, mac)
             
-            print(plaintext)
             self.rcv_sqn = self.rcv_sqn + 1
         except SiFT_MTP_Error as e:
             raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
@@ -150,24 +143,25 @@ class SiFT_MTP:
         if len(msg_body) != msg_len - self.size_msg_hdr:
             raise SiFT_MTP_Error('Incomplete message body reveived')
 
-        return parsed_msg_hdr['typ'], msg_body
+        return parsed_msg_hdr['typ'], plaintext
+    # msg_body
 
-    def encrypt_response(self, msg_body):
-        msg_hdr = self.login_header()
+    # def encrypt_response(self, msg_body):
+    #     msg_hdr = self.login_header()
 
-        tk = get_random_bytes(32)
-        nonce = self.msg_hdr_sqn + self.msg_hdr_rnd
-        cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce)
-        cipher.update(msg_hdr)
-        ciphertext, mac = cipher.encrypt_and_digest(msg_body)
+    #     tk = get_random_bytes(32)
+    #     nonce = self.msg_hdr_sqn + self.msg_hdr_rnd
+    #     cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce)
+    #     cipher.update(msg_hdr)
+    #     ciphertext, mac = cipher.encrypt_and_digest(msg_body)
 
-        keypair = RSA.generate(2048)
-        pubkey = keypair.publickey()
-        cipher2 = PKCS1_OAEP.new(pubkey)
-        etk = cipher2.encrypt(tk)
+    #     keypair = RSA.generate(2048)
+    #     pubkey = keypair.publickey()
+    #     cipher2 = PKCS1_OAEP.new(pubkey)
+    #     etk = cipher2.encrypt(tk)
 
-        msg = msg_hdr + ciphertext + mac + etk
-        return msg
+    #     msg = msg_hdr + ciphertext + mac + etk
+    #     return msg
 
     # sends all bytes provided via the peer socket
     def send_bytes(self, bytes_to_send):
@@ -179,15 +173,14 @@ class SiFT_MTP:
     # builds and sends message of a given type using the provided payload
     def send_msg(self, msg_type, msg_payload):
 
+        self.transfer_key = b'server.py is the server program.'
         msg_bytes_length = (self.size_msg_hdr + len(msg_payload) + self.size_mac).to_bytes(2, 'big')
         msg_bytes_sqn = self.snd_sqn.to_bytes(2, 'big')
         msg_hdr_rnd = get_random_bytes(6)
-        self.transfer_key = b'server.py is the server program.'
 
         msg_hdr = self.msg_hdr_ver + msg_type + msg_bytes_length + msg_bytes_sqn + msg_hdr_rnd + self.msg_hdr_rsv
 
         nonce = msg_bytes_sqn + msg_hdr_rnd
-
         cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
         cipher.update(msg_hdr)
         ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
