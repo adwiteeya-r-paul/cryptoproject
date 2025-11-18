@@ -149,7 +149,7 @@ class SiFT_MTP:
 		cipher2 = PKCS1_OAEP.new(pubkey)
 		etk = cipher2.encrypt(tk)
 
-		msg = msg_hdr + msg_body + ciphertext + mac + etk
+		msg = msg_hdr + ciphertext + mac + etk
 		return msg
 
 
@@ -184,7 +184,7 @@ class SiFT_MTP:
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + msg_payload)
+			self.send_bytes(emsg)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 
