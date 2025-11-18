@@ -21,6 +21,7 @@ class SiFT_MTP:
 
 		self.DEBUG = True
 		# --------- CONSTANTS ------------
+
 		self.version_major = 1
 		self.version_minor = 0
 		self.msg_hdr_ver = b'\x01\x00'
@@ -134,7 +135,7 @@ class SiFT_MTP:
 		return parsed_msg_hdr['typ'], msg_body
 
 
-	def login_response(self, msg_body):
+	def encrypt_response(self, msg_body):
 		msg_hdr = self.login_header()
 
 		tk = get_random_bytes(32)
@@ -164,18 +165,20 @@ class SiFT_MTP:
 
 	# builds and sends message of a given type using the provided payload
 	def send_msg(self, msg_type, msg_payload):
+
+		emsg = self.encrypt_response(msg_payload)
 		
 		# build message
-		msg_size = self.size_msg_hdr + len(msg_payload)
+		msg_size = len(emsg)
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len
+
+
 
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
-			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
-			print('BDY (' + str(len(msg_payload)) + '): ')
-			print(msg_payload.hex())
+			print(emsg)
 			print('------------------------------------------')
 		# DEBUG 
 
