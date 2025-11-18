@@ -84,7 +84,7 @@ class SiFT_LOGIN:
         # DEBUG 
         if self.DEBUG:
             print('Incoming payload (' + str(len(msg_payload)) + '):')
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print(msg_payload[:max(512, len(msg_payload))].hex())
             print('------------------------------------------')
         # DEBUG 
 

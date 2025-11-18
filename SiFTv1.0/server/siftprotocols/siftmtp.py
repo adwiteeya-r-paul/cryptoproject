@@ -72,6 +72,7 @@ class SiFT_MTP:
         parsed_msg_hdr['sqn'], i = msg_hdr[i:i + self.size_msg_hdr_sqn], i + self.size_msg_hdr_sqn
         parsed_msg_hdr['rnd'], i = msg_hdr[i:i + self.size_msg_hdr_rnd], i + self.size_msg_hdr_rnd
         parsed_msg_hdr['rsv'] = msg_hdr[i:i + self.size_msg_hdr_rsv]
+        
         return parsed_msg_hdr
 
     # receives n bytes from the peer socket
@@ -109,10 +110,31 @@ class SiFT_MTP:
         if parsed_msg_hdr['typ'] not in self.msg_types:
             raise SiFT_MTP_Error('Unknown message type found in message header')
 
+        self.transfer_key = b'server.py is the server program.'
         msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-
+        print(msg_len)
+		# header = parsed_msg_hdr[:msg_len-self.size_msg_hdr_len]   
+		# ciphertext = ciphertext_all[20:-16]
+		# authtag = ciphertext_all[-16:]
+        nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
+        print(msg_hdr.hex())
+        
+        # msg_bytes_sqn = self.rcv_sqn.to_bytes(2, 'big')
+        
         try:
             msg_body = self.receive_bytes(msg_len - self.size_msg_hdr)
+            print(msg_body.hex())
+            payload = msg_body[0:-self.size_mac]
+            print(payload.hex())
+            mac = msg_body[-self.size_mac:]
+            print(mac.hex())
+            
+            cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+            cipher.update(msg_hdr)
+            plaintext = cipher.decrypt_and_verify(payload, mac)
+            
+            print(plaintext)
+            self.rcv_sqn = self.rcv_sqn + 1
         except SiFT_MTP_Error as e:
             raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 
@@ -157,11 +179,10 @@ class SiFT_MTP:
     # builds and sends message of a given type using the provided payload
     def send_msg(self, msg_type, msg_payload):
 
-        msg_bytes_length = (self.size_msg_hdr + len(msg_payload)).to_bytes(2, 'big')
+        msg_bytes_length = (self.size_msg_hdr + len(msg_payload) + self.size_mac).to_bytes(2, 'big')
         msg_bytes_sqn = self.snd_sqn.to_bytes(2, 'big')
         msg_hdr_rnd = get_random_bytes(6)
         self.transfer_key = b'server.py is the server program.'
-
 
         msg_hdr = self.msg_hdr_ver + msg_type + msg_bytes_length + msg_bytes_sqn + msg_hdr_rnd + self.msg_hdr_rsv
 
@@ -183,7 +204,9 @@ class SiFT_MTP:
         # DEBUG
         if self.DEBUG:
             print('MTP message to send (' + str(msg_size) + '):')
-            print(msg)
+            print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
+            print('BDY (' + str(len(msg)) + '): ')
+            print(msg.hex())
             print('------------------------------------------')
         # DEBUG
 
