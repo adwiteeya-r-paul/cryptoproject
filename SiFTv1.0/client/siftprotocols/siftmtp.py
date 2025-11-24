@@ -50,17 +50,9 @@ class SiFT_MTP:
                         self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
         # --------- STATE ------------
         self.peer_socket = peer_socket
-        self.snd_sqn = 0
+        self.snd_sqn = 1
         self.rcv_sqn = 0
         self.transfer_key = None
-
-    # def login_header(self):
-
-    #     msg_bytes_length = b'\x00\x0F'
-    #     # msg_hdr_sqn = b'\x00\x01'
-    #     # msg_hdr_rnd = get_random_bytes(6)
-    #     msg_hdr = self.msg_hdr_ver + self.type_login_res + msg_bytes_length + self.msg_hdr_sqn + self.msg_hdr_rnd + self.msg_hdr_rsv
-    #     return msg_hdr
 
     # parses a message header and returns a dictionary containing the header fields
     def parse_msg_header(self, msg_hdr):
@@ -111,12 +103,14 @@ class SiFT_MTP:
             raise SiFT_MTP_Error('Unknown message type found in message header')
 
         self.transfer_key = b'server.py is the server program.'
-        msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-        nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
         
-        # TODO
-        # check sequence num in header
-        # msg_bytes_sqn = self.rcv_sqn.to_bytes(2, 'big')
+        msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
+        
+        msg_sqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')
+        if msg_sqn <= self.rcv_sqn:
+            raise SiFT_MTP_Error(f'Message replay (old sequence detected): {msg_sqn} <= {self.rcv_sqn}')
+        
+        nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
         
         try:
             msg_body = self.receive_bytes(msg_len - self.size_msg_hdr)
@@ -143,26 +137,10 @@ class SiFT_MTP:
         if len(msg_body) != msg_len - self.size_msg_hdr:
             raise SiFT_MTP_Error('Incomplete message body reveived')
 
+        self.rcv_sqn = msg_sqn 
+
         return parsed_msg_hdr['typ'], plaintext
-    # msg_body
-
-    # def encrypt_response(self, msg_body):
-    #     msg_hdr = self.login_header()
-
-    #     tk = get_random_bytes(32)
-    #     nonce = self.msg_hdr_sqn + self.msg_hdr_rnd
-    #     cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce)
-    #     cipher.update(msg_hdr)
-    #     ciphertext, mac = cipher.encrypt_and_digest(msg_body)
-
-    #     keypair = RSA.generate(2048)
-    #     pubkey = keypair.publickey()
-    #     cipher2 = PKCS1_OAEP.new(pubkey)
-    #     etk = cipher2.encrypt(tk)
-
-    #     msg = msg_hdr + ciphertext + mac + etk
-    #     return msg
-
+    
     # sends all bytes provided via the peer socket
     def send_bytes(self, bytes_to_send):
         try:
@@ -185,6 +163,9 @@ class SiFT_MTP:
         cipher.update(msg_hdr)
         ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
 
+        # TODO
+        # need actual secret key
+        
         # keypair = RSA.generate(2048)
         # pubkey = keypair.publickey()
         # cipher2 = PKCS1_OAEP.new(pubkey)
@@ -193,6 +174,9 @@ class SiFT_MTP:
         # build message
         msg = msg_hdr + ciphertext + mac
         msg_size = len(msg)
+
+        # TODO
+        # checking login request
 
         # DEBUG
         if self.DEBUG:
@@ -206,7 +190,7 @@ class SiFT_MTP:
         # try to send
         try:
             self.send_bytes(msg)
-            self.snd_sqn = self.snd_sqn + 1
+            self.snd_sqn += 1
         except SiFT_MTP_Error as e:
             raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 
