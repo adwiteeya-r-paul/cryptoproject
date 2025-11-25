@@ -7,6 +7,7 @@ from siftprotocols.siftlogin import SiFT_LOGIN, SiFT_LOGIN_Error
 from siftprotocols.siftcmd import SiFT_CMD, SiFT_CMD_Error
 from siftprotocols.siftupl import SiFT_UPL, SiFT_UPL_Error
 from siftprotocols.siftdnl import SiFT_DNL, SiFT_DNL_Error
+import rsa
 
 # ----------- CONFIG -------------
 server_ip = '127.0.0.1' # localhost
@@ -185,6 +186,12 @@ class SiFTShell(cmd.Cmd):
         sckt.close()
         return True
 
+def load_publickey():
+    with open('server_public_key.pem') as publicfile:
+        p = publicfile.read()
+        pubkey = rsa.PublicKey.load_pkcs1(p)
+    
+    return pubkey
 
 # --------------------------------------
 if __name__ == '__main__':
