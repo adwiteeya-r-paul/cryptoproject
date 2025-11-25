@@ -4,6 +4,7 @@ import sys, threading, socket, getpass
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
 from siftprotocols.siftlogin import SiFT_LOGIN, SiFT_LOGIN_Error
 from siftprotocols.siftcmd import SiFT_CMD, SiFT_CMD_Error
+from Crypto.PublicKey import RSA
 
 class Server:
     def __init__(self):
@@ -47,10 +48,19 @@ class Server:
             threading.Thread(target=self.handle_client, args=(client_socket, addr, )).start()
 
 
+    def load_keypair(self):
+        keypair = RSA.import_key(
+            open('server_keypair_file.pem', 'rb').read(),
+                passphrase="Applied_Crypto_Project_Fall_2025"
+        )
+        return keypair
+
+
     def handle_client(self, client_socket, addr):
         print('New client on ' + addr[0] + ':' + str(addr[1]))
 
-        mtp = SiFT_MTP(client_socket)
+        srvprivkey = self.load_keypair()
+        mtp = SiFT_MTP(client_socket, srvprivkey)
 
         loginp = SiFT_LOGIN(mtp)
         users = self.load_users(self.server_usersfile)
