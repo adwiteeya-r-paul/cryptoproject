@@ -16,6 +16,7 @@ class SiFT_MTP_Error(Exception):
 
 
 class SiFT_MTP:
+    
     def __init__(self, peer_socket):
 
         self.DEBUG = True
@@ -24,7 +25,6 @@ class SiFT_MTP:
         self.version_major = 1
         self.version_minor = 0
         self.msg_hdr_ver = b'\x01\x00'
-        # self.msg_hdr_rnd = get_random_bytes(6)
         self.msg_hdr_rsv = b'\x00\x00'
         self.size_msg_hdr = 16
         self.size_msg_hdr_ver = 2
@@ -52,6 +52,8 @@ class SiFT_MTP:
         self.peer_socket = peer_socket
         self.snd_sqn = 1
         self.rcv_sqn = 0
+        # TODO
+        # need actual secret key
         self.transfer_key = None
 
     # parses a message header and returns a dictionary containing the header fields
@@ -95,14 +97,16 @@ class SiFT_MTP:
             raise SiFT_MTP_Error('Incomplete message header received')
 
         parsed_msg_hdr = self.parse_msg_header(msg_hdr)
-
+        msg_type = parsed_msg_hdr['typ']
+        
         if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
             raise SiFT_MTP_Error('Unsupported version found in message header')
 
-        if parsed_msg_hdr['typ'] not in self.msg_types:
+        if msg_type not in self.msg_types:
             raise SiFT_MTP_Error('Unknown message type found in message header')
-
-        self.transfer_key = b'server.py is the server program.'
+        
+        if self.transfer_key is None:
+            self.transfer_key = b'server.py is the server program.'
         
         msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
         
@@ -110,18 +114,39 @@ class SiFT_MTP:
         if msg_sqn <= self.rcv_sqn:
             raise SiFT_MTP_Error(f'Message replay (old sequence detected): {msg_sqn} <= {self.rcv_sqn}')
         
-        nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
+        # is_login = msg_type == self.type_login_req
+        # etk_len = 256 if is_login else 0
         
+        # try to receive
         try:
-            msg_body = self.receive_bytes(msg_len - self.size_msg_hdr)
-            payload = msg_body[0:-self.size_mac]
+            msg_body_len = msg_len - self.size_msg_hdr
+            msg_body = self.receive_bytes(msg_body_len)
+            
+            # if is_login:
+            #     if msg_body_len != self.size_mac + etk_len:
+            #         raise SiFT_MTP_Error('Incomplete message body received')
+            #     epd_len = msg_body_len - self.size_mac - etk_len
+            #     epd = msg_body[:epd_len] # includes an additional etk
+            #     mac = msg_body[epd_len:epd_len + self.size_mac:]
+            #     # TODO
+            #     # use etk later to decrupt tk with RSA
+            #     # then use tk to decrypt epd for login msg
+            #     etk = msg_body[epd_len + self.size_mac:]
+            # else:
+            #     epd = msg_body[:-self.size_mac]
+            #     mac = msg_body[-self.size_mac:]
+            
+            epd = msg_body[:-self.size_mac]
             mac = msg_body[-self.size_mac:]
             
-            cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+            nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
+            cipher = AES.new(self.transfer_key, 
+                            AES.MODE_GCM,
+                            nonce = nonce,
+                            mac_len = self.size_mac)
             cipher.update(msg_hdr)
-            plaintext = cipher.decrypt_and_verify(payload, mac)
-            
-            self.rcv_sqn = self.rcv_sqn + 1
+            msg_payload = cipher.decrypt_and_verify(epd, mac)
+        
         except SiFT_MTP_Error as e:
             raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 
@@ -135,14 +160,15 @@ class SiFT_MTP:
         # DEBUG
 
         if len(msg_body) != msg_len - self.size_msg_hdr:
-            raise SiFT_MTP_Error('Incomplete message body reveived')
+            raise SiFT_MTP_Error('Incomplete message body received')
 
-        self.rcv_sqn = msg_sqn 
+        self.rcv_sqn = msg_sqn
 
-        return parsed_msg_hdr['typ'], plaintext
+        return msg_type, msg_payload
     
     # sends all bytes provided via the peer socket
     def send_bytes(self, bytes_to_send):
+        
         try:
             self.peer_socket.sendall(bytes_to_send)
         except:
@@ -150,39 +176,66 @@ class SiFT_MTP:
 
     # builds and sends message of a given type using the provided payload
     def send_msg(self, msg_type, msg_payload):
-
-        self.transfer_key = b'server.py is the server program.'
-        msg_bytes_length = (self.size_msg_hdr + len(msg_payload) + self.size_mac).to_bytes(2, 'big')
-        msg_bytes_sqn = self.snd_sqn.to_bytes(2, 'big')
+        
+        # TODO
+        # check for login request
+        # is_login = msg_type == self.type_login_req
+        # etk = b''
+        
+        # if is_login:
+        #     # tk = get_random_bytes(32)
+        #     if self.transfer_key is None:
+        #         self.transfer_key = b'server.py is the server program.'
+        #     etk = b'\x00' * 256 # total_msg_len += 256
+        #     msg_len = self.size_msg_hdr + len(msg_payload) + self.size_mac + len(etk)
+        # else:
+        #     msg_len = self.size_msg_hdr + len(msg_payload) + self.size_mac
+        
+        # ??? msg_len before and after encrypt? 
+        # ex: bob\nbbb = 9 = pd_len
+        # total msg_len = 35 = msg_hdr (16) + pd_len (7) + msg_body (19)
+        # currently print len in msg_hdr is 23 (not the same?1)
+        msg_len = self.size_msg_hdr + len(msg_payload) + self.size_mac
+        msg_len_bytes = msg_len.to_bytes(2, 'big')
+        msg_sqn_bytes = self.snd_sqn.to_bytes(2, 'big')
         msg_hdr_rnd = get_random_bytes(6)
 
-        msg_hdr = self.msg_hdr_ver + msg_type + msg_bytes_length + msg_bytes_sqn + msg_hdr_rnd + self.msg_hdr_rsv
-
-        nonce = msg_bytes_sqn + msg_hdr_rnd
-        cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+        msg_hdr = self.msg_hdr_ver + msg_type + msg_len_bytes + msg_sqn_bytes + msg_hdr_rnd + self.msg_hdr_rsv
+        
+        # if is_login:
+        #     AES_key = tk
+        # else:
+        #     AES_key = self.transfer_key
+        
+        if self.transfer_key is None:
+            self.transfer_key = b'server.py is the server program.'
+        nonce = msg_sqn_bytes + msg_hdr_rnd
+        cipher = AES.new(self.transfer_key,
+                        AES.MODE_GCM, 
+                        nonce = nonce, 
+                        mac_len = self.size_mac)
         cipher.update(msg_hdr)
         ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
 
         # TODO
-        # need actual secret key
+        # if is_login:
+            # Check for server RSA public key
+            # ---
+            # keypair = RSA.generate(2048)
+            # pubkey = keypair.publickey()
+            # cipher = PKCS1_OAEP.new(pubkey)
+            # etk = cipher.encrypt(tk)
         
-        # keypair = RSA.generate(2048)
-        # pubkey = keypair.publickey()
-        # cipher2 = PKCS1_OAEP.new(pubkey)
-        # etk = cipher2.encrypt(tk)
-
         # build message
-        msg = msg_hdr + ciphertext + mac
+        msg = msg_hdr + ciphertext + mac 
+        # if is_login: msg += etk
         msg_size = len(msg)
-
-        # TODO
-        # checking login request
 
         # DEBUG
         if self.DEBUG:
             print('MTP message to send (' + str(msg_size) + '):')
             print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
-            print('BDY (' + str(len(msg)) + '): ')
+            print('BDY (' + str(msg_size) + '): ')
             print(msg.hex())
             print('------------------------------------------')
         # DEBUG
@@ -193,5 +246,3 @@ class SiFT_MTP:
             self.snd_sqn += 1
         except SiFT_MTP_Error as e:
             raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
-
-
