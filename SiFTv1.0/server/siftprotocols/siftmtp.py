@@ -35,6 +35,7 @@ class SiFT_MTP:
         self.size_msg_hdr_rnd = 6
         self.size_msg_hdr_rsv = 2
         self.size_mac = 12
+        self.size_etk = 256
         self.type_login_req = b'\x00\x00'
         self.type_login_res = b'\x00\x10'
         self.type_command_req = b'\x01\x00'
@@ -135,6 +136,7 @@ class SiFT_MTP:
         if self.transfer_key is None:
             self.transfer_key = b'server.py is the server program.'
 
+        # check sequence number in header
         if msg_sqn <= self.rcv_sqn:
             raise SiFT_MTP_Error(f'Message replay (old sequence detected): {msg_sqn} <= {self.rcv_sqn}')
         
@@ -151,17 +153,15 @@ class SiFT_MTP:
         # recreate nonce
         nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
 
-        # --------- LOGIN RESPONSE (SERVER ONLY) ------------
         if msg_type == self.type_login_req:
             if self.server_privatekey is None:
                 raise SiFT_MTP_Error('Server missing private key to decrypt ETK')
 
             # parse message body
-            etk_len = self.server_privatekey.size_in_bytes()
-            epd_len = msg_body_len - self.size_mac - etk_len
+            epd_len = msg_body_len - self.size_mac - self.size_etk
             epd = msg_body[:epd_len]
-            mac = msg_body[epd_len:epd_len + self.size_mac:]
-            etk = msg_body[-etk_len:]
+            mac = msg_body[epd_len:epd_len + self.size_mac]
+            etk = msg_body[-self.size_etk:]
             
             # use private key to decrypt etk (to authenticate server)
             try:
@@ -170,7 +170,7 @@ class SiFT_MTP:
             except Exception:
                 raise SiFT_MTP_Error('Invalid ETK (RSA decryption failed)')
             
-            # use tk to decrypt epd
+            # use tk to verify mac and decrypt epd
             try:
                 cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
                 cipher.update(msg_hdr)
@@ -180,7 +180,7 @@ class SiFT_MTP:
         else:
             if self.transfer_key is None:
                 self.transfer_key = b'server.py is the server program.'
-            
+
             # get subsequent message body
             epd = msg_body[:-self.size_mac]
             mac = msg_body[-self.size_mac:]
@@ -225,7 +225,7 @@ class SiFT_MTP:
         # default message length
         msg_len = self.size_msg_hdr + len(msg_payload) + self.size_mac
 
-        # build header
+        # default header
         msg_hdr = (
             self.msg_hdr_ver + 
             msg_type + 
@@ -235,41 +235,44 @@ class SiFT_MTP:
             self.msg_hdr_rsv
         )
 
-        # --------- LOGIN REQUEST (CLIENT ONLY) ------------
+        msg = b''
+
         if msg_type == self.type_login_req:
             if self.server_publickey is None:
                 raise SiFT_MTP_Error('Client missing server public key for login')
 
-            # generate temp key (AES session key)
-            tk = get_random_bytes(32)
-            
-            # use server RSA public key to encrypt tk
-            cipher = PKCS1_OAEP.new(self.server_publickey)
-            etk = cipher.encrypt(tk)
-            msg_len += len(etk)
-
             # update header with new message length
+            msg_len += self.size_etk
             before_hdr_len = self.size_msg_hdr_ver + self.size_msg_hdr_ver
             msg_hdr = (
                 msg_hdr[:before_hdr_len] + 
                 msg_len.to_bytes(2, 'big') + 
                 msg_hdr[before_hdr_len + self.size_msg_hdr_len:]
             )
-            
+
+            # generate temp key (AES session key)
+            tk = get_random_bytes(32)
+
             # encrypt payload using AES-GCM with tk
             cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
             cipher.update(msg_hdr)
             ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
 
+            # use server RSA public key to encrypt tk
+            cipher = PKCS1_OAEP.new(self.server_publickey)
+            etk = cipher.encrypt(tk)
+
             # build login message
             msg = msg_hdr + ciphertext + mac + etk
-            
         else:
             if self.transfer_key is None:
                 self.transfer_key = b'server.py is the server program.'
-            
+
+            encrypt_key = tk if msg_type == self.type_login_res else self.transfer_key
+
+            # encrypt login response with tk but
             # encrypt payload with final transfer key
-            cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+            cipher = AES.new(encrypt_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
             cipher.update(msg_hdr)
             ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
             
