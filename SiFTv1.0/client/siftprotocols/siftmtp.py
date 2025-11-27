@@ -63,7 +63,13 @@ class SiFT_MTP:
         self.rcv_sqn = 0
         # TODO
         # need actual secret key
+        self.tk = None
         self.transfer_key = None
+
+    # generates tk
+    def gen_tk(self):
+        self.tk = get_random_bytes(32)
+
 
     # parses a message header and returns a dictionary containing the header fields
     def parse_msg_header(self, msg_hdr):
@@ -153,7 +159,7 @@ class SiFT_MTP:
         # recreate nonce
         nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
 
-        if msg_type == self.type_login_req:
+        if msg_type == self.type_login_req or msg_type == self.type_login_res:
             if self.server_privatekey is None:
                 raise SiFT_MTP_Error('Server missing private key to decrypt ETK')
 
@@ -166,13 +172,13 @@ class SiFT_MTP:
             # use private key to decrypt etk (to authenticate server)
             try:
                 cipher_rsa = PKCS1_OAEP.new(self.server_privatekey)
-                tk = cipher_rsa.decrypt(etk)
+                self.tk = cipher_rsa.decrypt(etk)
             except Exception:
                 raise SiFT_MTP_Error('Invalid ETK (RSA decryption failed)')
             
             # use tk to verify mac and decrypt epd
             try:
-                cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+                cipher = AES.new(self.tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
                 cipher.update(msg_hdr)
                 msg_payload = cipher.decrypt_and_verify(epd, mac)
             except:
@@ -236,20 +242,13 @@ class SiFT_MTP:
         )
 
         msg = b''
-        
-        # generate temp key (AES session key)
-        # same for login request and response???
-        # tk = get_random_bytes(32)
-        # if self.transfer_key is None:
-        #     self.transfer_key = b'server.py is the server program.'
 
-        # encrypt_key = b''
-        # if msg_type == self.type_login_req or msg_type == self.type_login_res:
-        #     encrypt_key = tk
-        # else:
-        #     encrypt_key = self.transfer_key
 
-        if msg_type == self.type_login_req:
+        if msg_type == self.type_login_req or msg_type == self.type_login_res:
+
+            #if sending a login request, which can only be done by client in the beginning of the session
+            if msg_type == self.type_login_req:
+                self.gen_tk()
             if self.server_publickey is None:
                 raise SiFT_MTP_Error('Client missing server public key for login')
 
@@ -262,19 +261,20 @@ class SiFT_MTP:
                 msg_hdr[before_hdr_len + self.size_msg_hdr_len:]
             )
 
-            tk = get_random_bytes(32)
 
             # encrypt payload using AES-GCM with tk
-            cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+            cipher = AES.new(self.tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
             cipher.update(msg_hdr)
             ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
 
             # use server RSA public key to encrypt tk
             cipher = PKCS1_OAEP.new(self.server_publickey)
-            etk = cipher.encrypt(tk)
+            etk = cipher.encrypt(self.tk)
 
             # build login message
             msg = msg_hdr + ciphertext + mac + etk
+
+
         else:
             # encrypt payload with final transfer key
             cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
