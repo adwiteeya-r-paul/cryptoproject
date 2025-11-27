@@ -236,6 +236,18 @@ class SiFT_MTP:
         )
 
         msg = b''
+        
+        # generate temp key (AES session key)
+        # same for login request and response???
+        # tk = get_random_bytes(32)
+        # if self.transfer_key is None:
+        #     self.transfer_key = b'server.py is the server program.'
+
+        # encrypt_key = b''
+        # if msg_type == self.type_login_req or msg_type == self.type_login_res:
+        #     encrypt_key = tk
+        # else:
+        #     encrypt_key = self.transfer_key
 
         if msg_type == self.type_login_req:
             if self.server_publickey is None:
@@ -250,7 +262,6 @@ class SiFT_MTP:
                 msg_hdr[before_hdr_len + self.size_msg_hdr_len:]
             )
 
-            # generate temp key (AES session key)
             tk = get_random_bytes(32)
 
             # encrypt payload using AES-GCM with tk
@@ -265,14 +276,8 @@ class SiFT_MTP:
             # build login message
             msg = msg_hdr + ciphertext + mac + etk
         else:
-            if self.transfer_key is None:
-                self.transfer_key = b'server.py is the server program.'
-
-            encrypt_key = tk if msg_type == self.type_login_res else self.transfer_key
-
-            # encrypt login response with tk but
             # encrypt payload with final transfer key
-            cipher = AES.new(encrypt_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+            cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
             cipher.update(msg_hdr)
             ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
             
