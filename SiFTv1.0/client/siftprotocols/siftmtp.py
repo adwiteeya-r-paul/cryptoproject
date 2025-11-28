@@ -1,7 +1,10 @@
 # python3
 
 import socket
+from idlelib.pyparse import trans
 
+from Crypto.Hash import SHA256
+from Crypto.Protocol.KDF import HKDF
 from Crypto.PublicKey import RSA
 from Crypto.PublicKey.RSA import RsaKey
 from Crypto.Random import get_random_bytes
@@ -16,7 +19,7 @@ class SiFT_MTP_Error(Exception):
 
 
 class SiFT_MTP:
-    
+
     def __init__(self, peer_socket, rsa_key):
 
         self.DEBUG = True
@@ -47,9 +50,9 @@ class SiFT_MTP:
         self.type_dnload_res_0 = b'\x03\x10'
         self.type_dnload_res_1 = b'\x03\x11'
         self.msg_types = (self.type_login_req, self.type_login_res,
-                        self.type_command_req, self.type_command_res,
-                        self.type_upload_req_0, self.type_upload_req_1, self.type_upload_res,
-                        self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
+                          self.type_command_req, self.type_command_res,
+                          self.type_upload_req_0, self.type_upload_req_1, self.type_upload_res,
+                          self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 
         # --------- STATE ------------
         self.peer_socket = peer_socket
@@ -65,11 +68,13 @@ class SiFT_MTP:
         # need actual secret key
         self.tk = None
         self.transfer_key = None
+        self.client_random = None
+        self.server_random = None
+        self.request_hash = None
 
     # generates tk
     def gen_tk(self):
         self.tk = get_random_bytes(32)
-
 
     # parses a message header and returns a dictionary containing the header fields
     def parse_msg_header(self, msg_hdr):
@@ -81,7 +86,7 @@ class SiFT_MTP:
         parsed_msg_hdr['sqn'], i = msg_hdr[i:i + self.size_msg_hdr_sqn], i + self.size_msg_hdr_sqn
         parsed_msg_hdr['rnd'], i = msg_hdr[i:i + self.size_msg_hdr_rnd], i + self.size_msg_hdr_rnd
         parsed_msg_hdr['rsv'] = msg_hdr[i:i + self.size_msg_hdr_rsv]
-        
+
         return parsed_msg_hdr
 
     # receives n bytes from the peer socket
@@ -132,20 +137,17 @@ class SiFT_MTP:
         msg_type = parsed_msg_hdr['typ']
         msg_len = int.from_bytes(parsed_msg_hdr['len'], 'big')
         msg_sqn = int.from_bytes(parsed_msg_hdr['sqn'], 'big')
-        
+
         if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
             raise SiFT_MTP_Error('Unsupported version found in message header')
 
         if msg_type not in self.msg_types:
             raise SiFT_MTP_Error('Unknown message type found in message header')
-        
-        if self.transfer_key is None:
-            self.transfer_key = b'server.py is the server program.'
 
         # check sequence number in header
         if msg_sqn <= self.rcv_sqn:
             raise SiFT_MTP_Error(f'Message replay (old sequence detected): {msg_sqn} <= {self.rcv_sqn}')
-        
+
         # try to receive
         try:
             msg_body_len = msg_len - self.size_msg_hdr
@@ -159,23 +161,30 @@ class SiFT_MTP:
         # recreate nonce
         nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
 
-        if msg_type == self.type_login_req or msg_type == self.type_login_res:
+        if msg_type == self.type_login_req:
             if self.server_privatekey is None:
                 raise SiFT_MTP_Error('Server missing private key to decrypt ETK')
 
             # parse message body
             epd_len = msg_body_len - self.size_mac - self.size_etk
             epd = msg_body[:epd_len]
+
             mac = msg_body[epd_len:epd_len + self.size_mac]
             etk = msg_body[-self.size_etk:]
-            
+
             # use private key to decrypt etk (to authenticate server)
             try:
                 cipher_rsa = PKCS1_OAEP.new(self.server_privatekey)
+                if self.server_privatekey is None:
+                    print("Client's private key absent.")
+            except Exception:
+                raise SiFT_MTP_Error('RSA private key failed')
+
+            try:
                 self.tk = cipher_rsa.decrypt(etk)
             except Exception:
                 raise SiFT_MTP_Error('Invalid ETK (RSA decryption failed)')
-            
+
             # use tk to verify mac and decrypt epd
             try:
                 cipher = AES.new(self.tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
@@ -183,21 +192,42 @@ class SiFT_MTP:
                 msg_payload = cipher.decrypt_and_verify(epd, mac)
             except:
                 raise SiFT_MTP_Error('Invalid MAC in login message')
+
+
+        elif msg_type == self.type_login_res:
+            # get subsequent message body
+            epd = msg_body[:-self.size_mac]
+            mac = msg_body[-self.size_mac:]
+
+
+            # decrypt payload with final transfer key
+            try:
+                cipher = AES.new(self.tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+                cipher.update(msg_hdr)
+                msg_payload = cipher.decrypt_and_verify(epd, mac)
+                self.server_random = msg_payload[-16:]
+                self.request_hash = msg_payload[:32]
+            except:
+                raise SiFT_MTP_Error('Invalid MAC in login message2')
+
+
+
+
+
         else:
-            if self.transfer_key is None:
-                self.transfer_key = b'server.py is the server program.'
+
 
             # get subsequent message body
             epd = msg_body[:-self.size_mac]
             mac = msg_body[-self.size_mac:]
-            
+
             # decrypt payload with final transfer key
             try:
                 cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
                 cipher.update(msg_hdr)
                 msg_payload = cipher.decrypt_and_verify(epd, mac)
             except:
-                raise SiFT_MTP_Error('Invalid MAC in login message')
+                raise SiFT_MTP_Error('Invalid MAC in login message2')
 
         # DEBUG
         if self.DEBUG:
@@ -211,10 +241,10 @@ class SiFT_MTP:
         self.rcv_sqn = msg_sqn
 
         return msg_type, msg_payload
-    
+
     # sends all bytes provided via the peer socket
     def send_bytes(self, bytes_to_send):
-        
+
         try:
             self.peer_socket.sendall(bytes_to_send)
         except:
@@ -233,22 +263,19 @@ class SiFT_MTP:
 
         # default header
         msg_hdr = (
-            self.msg_hdr_ver + 
-            msg_type + 
-            msg_len.to_bytes(2, 'big') + 
-            msg_sqn_bytes + 
-            msg_hdr_rnd + 
-            self.msg_hdr_rsv
+                self.msg_hdr_ver +
+                msg_type +
+                msg_len.to_bytes(2, 'big') +
+                msg_sqn_bytes +
+                msg_hdr_rnd +
+                self.msg_hdr_rsv
         )
 
         msg = b''
 
-
-        if msg_type == self.type_login_req or msg_type == self.type_login_res:
-
-            #if sending a login request, which can only be done by client in the beginning of the session
-            if msg_type == self.type_login_req:
-                self.gen_tk()
+        if msg_type == self.type_login_req:
+            self.gen_tk()
+            self.client_random = msg_payload[-16:]
             if self.server_publickey is None:
                 raise SiFT_MTP_Error('Client missing server public key for login')
 
@@ -256,11 +283,10 @@ class SiFT_MTP:
             msg_len += self.size_etk
             before_hdr_len = self.size_msg_hdr_ver + self.size_msg_hdr_ver
             msg_hdr = (
-                msg_hdr[:before_hdr_len] + 
-                msg_len.to_bytes(2, 'big') + 
-                msg_hdr[before_hdr_len + self.size_msg_hdr_len:]
+                    msg_hdr[:before_hdr_len] +
+                    msg_len.to_bytes(2, 'big') +
+                    msg_hdr[before_hdr_len + self.size_msg_hdr_len:]
             )
-
 
             # encrypt payload using AES-GCM with tk
             cipher = AES.new(self.tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
@@ -275,12 +301,26 @@ class SiFT_MTP:
             msg = msg_hdr + ciphertext + mac + etk
 
 
-        else:
-            # encrypt payload with final transfer key
-            cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+        elif msg_type == self.type_login_res:
+            cipher = AES.new(self.tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
             cipher.update(msg_hdr)
             ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
-            
+
+            # build subsequent message
+            msg = msg_hdr + ciphertext + mac
+
+        else:
+            if self.transfer_key is None:
+                self.transfer_key = self.client_random + self.server_random
+                self.transfer_key = HKDF(master=self.transfer_key, salt=self.request_hash.encode(), key_len=32, num_keys=1,
+                                         hashmod=SHA256)
+
+            # encrypt payload with final transfer key
+            cipher = AES.new(self.transfer_key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
+            print("Send transfer key", self.transfer_key)
+            cipher.update(msg_hdr)
+            ciphertext, mac = cipher.encrypt_and_digest(msg_payload)
+
             # build subsequent message
             msg = msg_hdr + ciphertext + mac
 
