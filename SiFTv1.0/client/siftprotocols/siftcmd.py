@@ -26,9 +26,15 @@ class SiFT_CMD:
         self.cmd_del = 'del'
         self.cmd_upl = 'upl'
         self.cmd_dnl = 'dnl'
-        self.commands = (self.cmd_pwd, self.cmd_lst, self.cmd_chd, 
-                         self.cmd_mkd, self.cmd_del, 
-                         self.cmd_upl, self.cmd_dnl)
+        self.commands = (
+            self.cmd_pwd, 
+            self.cmd_lst, 
+            self.cmd_chd,
+            self.cmd_mkd, 
+            self.cmd_del,
+            self.cmd_upl, 
+            self.cmd_dnl
+        )
         self.res_success = 'success'
         self.res_failure = 'failure'
         self.res_accept =  'accept'
@@ -215,7 +221,7 @@ class SiFT_CMD:
         # DEBUG 
         if self.DEBUG:
             print('Incoming payload (' + str(len(msg_payload)) + '):')
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print(msg_payload[:max(512, len(msg_payload))].decode(self.coding))
             print('------------------------------------------')
         # DEBUG 
 
@@ -245,7 +251,7 @@ class SiFT_CMD:
         # DEBUG 
         if self.DEBUG:
             print('Outgoing payload (' + str(len(msg_payload)) + '):')
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print(msg_payload[:max(512, len(msg_payload))].decode(self.coding))
             print('------------------------------------------')
         # DEBUG 
 
@@ -279,7 +285,7 @@ class SiFT_CMD:
         # DEBUG 
         if self.DEBUG:
             print('Outgoing payload (' + str(len(msg_payload)) + '):')
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print(msg_payload[:max(512, len(msg_payload))].decode(self.coding))
             print('------------------------------------------')
         # DEBUG 
 
@@ -303,7 +309,7 @@ class SiFT_CMD:
         # DEBUG 
         if self.DEBUG:
             print('Incoming payload (' + str(len(msg_payload)) + '):')
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print(msg_payload[:max(512, len(msg_payload))].decode(self.coding))
             print('------------------------------------------')
         # DEBUG 
 

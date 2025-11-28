@@ -217,9 +217,6 @@ if __name__ == '__main__':
         loginp.handle_login_client(username, password)
     except SiFT_LOGIN_Error as e:
         print('SiFT_LOGIN_Error: ' + e.err_msg)
-        # print('SiFT_CMD_Error: ' + e.err_msg)
-        # print('Closing connection with server on ' +  server_ip + ':' + str(server_port))
-        # sckt.close()
         sys.exit(1)
 
     cmdp = SiFT_CMD(mtp)
