@@ -102,7 +102,7 @@ class SiFT_MTP:
 
         return bytes_received
 
-    # receives and parses message, returns msg_type and msg_payload using gcm mode
+    # receives and parses message, returns msg_type and msg_payload
     def receive_msg(self):
 
         try:
@@ -142,8 +142,6 @@ class SiFT_MTP:
         # recreate nonce
         nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
 
-
-        # processing the login request by server
         if msg_type == self.type_login_req:
             if self.server_privatekey is None:
                 raise SiFT_MTP_Error('Server missing private key to decrypt ETK')
@@ -172,8 +170,6 @@ class SiFT_MTP:
                 msg_payload = cipher.decrypt_and_verify(epd, mac)
             except:
                 raise SiFT_MTP_Error('Invalid MAC in login request')
-
-        # creating the login response by server
 
         elif msg_type == self.type_login_res:
             # get login response message body
@@ -210,8 +206,8 @@ class SiFT_MTP:
             if msg_type == self.type_login_req:
                 print('ETK (' + str(self.size_etk) + '): ' + etk.hex())
             print('------------------------------------------')
+        # DEBUG
 
-       # updating receive sequence number
         self.rcv_sqn = msg_sqn
 
         return msg_type, msg_payload
@@ -224,7 +220,7 @@ class SiFT_MTP:
         except:
             raise SiFT_MTP_Error('Unable to send via peer socket')
 
-    # builds and sends message of a given type using the provided payload using gcm mode
+    # builds and sends message of a given type using the provided payload
     def send_msg(self, msg_type, msg_payload):
 
         # create nonce
@@ -247,12 +243,11 @@ class SiFT_MTP:
 
         msg = b''
 
-        # creating the login request by client
         if msg_type == self.type_login_req:
             if self.server_publickey is None:
                 raise SiFT_MTP_Error('Client missing server public key for login request')
 
-            # generation of temp transfer key for login session by client
+            # generate temp key for login session
             self.tk = get_random_bytes(32)
 
             # update header with new message length
@@ -276,8 +271,6 @@ class SiFT_MTP:
             # build encrypted login message
             msg = msg_hdr + ciphertext + mac + etk
 
-
-        # processing the login response by client
         elif msg_type == self.type_login_res:
             # encrypt payload using AES-GCM with tk
             cipher = AES.new(self.tk, AES.MODE_GCM, nonce=nonce, mac_len=self.size_mac)
@@ -311,8 +304,6 @@ class SiFT_MTP:
         # try to send message
         try:
             self.send_bytes(msg)
-
-            #updating of sqn number if message sent successfully
             self.snd_sqn += 1
         except SiFT_MTP_Error as e:
             raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)

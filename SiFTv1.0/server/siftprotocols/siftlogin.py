@@ -31,9 +31,9 @@ class SiFT_LOGIN:
     # builds a login request from a dictionary
     def build_login_req(self, login_req_struct):
 
-        login_req_str = str(login_req_struct['timestamp']) + self.delimiter
+        login_req_str = str(login_req_struct['timestamp']) + self.delimiter 
         login_req_str += login_req_struct['username'] + self.delimiter
-        login_req_str += login_req_struct['password'] + self.delimiter
+        login_req_str += login_req_struct['password'] + self.delimiter 
         login_req_str += login_req_struct['client_random'].hex()
 
         return login_req_str.encode(self.coding)
@@ -53,7 +53,7 @@ class SiFT_LOGIN:
     # builds a login response from a dictionary
     def build_login_res(self, login_res_struct):
 
-        login_res_str = login_res_struct['request_hash'].hex() + self.delimiter
+        login_res_str = login_res_struct['request_hash'].hex() + self.delimiter 
         login_res_str += login_res_struct['server_random'].hex()
 
         return login_res_str.encode(self.coding)
@@ -72,10 +72,10 @@ class SiFT_LOGIN:
     def check_password(self, pwd, usr_struct):
 
         pwdhash = PBKDF2(
-            password=pwd,
-            salt=usr_struct['salt'],
-            dkLen=len(usr_struct['pwdhash']),
-            count=usr_struct['icount'],
+            password=pwd, 
+            salt=usr_struct['salt'], 
+            dkLen=len(usr_struct['pwdhash']), 
+            count=usr_struct['icount'], 
             hmac_hash_module=SHA256)
 
         return pwdhash == usr_struct['pwdhash']
@@ -109,7 +109,7 @@ class SiFT_LOGIN:
         pwd = login_req_struct['password']
         client_random = login_req_struct['client_random']
 
-        # verifying timestamp by server
+        # checking timestamp
         curr_time = time_ns()
         least = curr_time - 10 ** 9
         most = curr_time + 10 ** 9
@@ -131,7 +131,7 @@ class SiFT_LOGIN:
 
         # building login response
         server_random = get_random_bytes(16)
-
+        
         login_res_struct = {}
         login_res_struct['request_hash'] = request_hash
         login_res_struct['server_random'] = server_random
@@ -152,17 +152,15 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
 
         # all verifications successful
-        # derivation of transfer key by server
         try:
             final_key = client_random + server_random
             final_key = HKDF(
-                master=final_key,
-                salt=request_hash,
-                key_len=32,
+                master=final_key, 
+                salt=request_hash, 
+                key_len=32, 
                 num_keys=1,
                 hashmod=SHA256
             )
-            # passing the transfer key to mtp
             self.mtp.set_transfer_key(final_key)
         except:
             raise SiFT_MTP_Error('Unable to establish a shared secret')
@@ -179,12 +177,9 @@ class SiFT_LOGIN:
 
         # building a login request
         client_random = get_random_bytes(16)
-
+        
         login_req_struct = {}
-
-        # client creating timestamp
         login_req_struct['timestamp'] = time_ns()
-
         login_req_struct['username'] = username
         login_req_struct['password'] = password
         login_req_struct['client_random'] = client_random
@@ -235,17 +230,15 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Verification of login response failed')
 
         # all verifications successful
-        # derivation of final transfer key by client
         try:
             final_key = client_random + server_random
             final_key = HKDF(
-                master=final_key,
-                salt=request_hash,
-                key_len=32,
+                master=final_key, 
+                salt=request_hash, 
+                key_len=32, 
                 num_keys=1,
                 hashmod=SHA256
             )
-            # passing the transfer key to mtp
             self.mtp.set_transfer_key(final_key)
         except:
             raise SiFT_MTP_Error('Unable to establish a shared secret')

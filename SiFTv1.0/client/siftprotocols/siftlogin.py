@@ -109,7 +109,7 @@ class SiFT_LOGIN:
         pwd = login_req_struct['password']
         client_random = login_req_struct['client_random']
 
-        # verifying timestamp by server
+        # checking timestamp
         curr_time = time_ns()
         least = curr_time - 10 ** 9
         most = curr_time + 10 ** 9
@@ -152,7 +152,6 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
 
         # all verifications successful
-        # derivation of transfer key by server
         try:
             final_key = client_random + server_random
             final_key = HKDF(
@@ -162,7 +161,6 @@ class SiFT_LOGIN:
                 num_keys=1,
                 hashmod=SHA256
             )
-            #passing the transfer key to mtp
             self.mtp.set_transfer_key(final_key)
         except:
             raise SiFT_MTP_Error('Unable to establish a shared secret')
@@ -181,10 +179,7 @@ class SiFT_LOGIN:
         client_random = get_random_bytes(16)
         
         login_req_struct = {}
-
-        # client creating timestamp
         login_req_struct['timestamp'] = time_ns()
-
         login_req_struct['username'] = username
         login_req_struct['password'] = password
         login_req_struct['client_random'] = client_random
@@ -235,7 +230,6 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Verification of login response failed')
 
         # all verifications successful
-        #derivation of final transfer key by client
         try:
             final_key = client_random + server_random
             final_key = HKDF(
@@ -245,7 +239,6 @@ class SiFT_LOGIN:
                 num_keys=1,
                 hashmod=SHA256
             )
-            #passing the transfer key to mtp
             self.mtp.set_transfer_key(final_key)
         except:
             raise SiFT_MTP_Error('Unable to establish a shared secret')
